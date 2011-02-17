@@ -43,38 +43,35 @@
       ; FIXME: need to check that type is retained
       (set (ebasic-var-to-symbol varname) value))))
 
-(defun ebasic/clear (&optional stringspace)
-  "Clear all variables.
+(defun ebasic-next-parse-block (expression)
+  "Find end of first block in EXPRESSION."
+  (let ((start-string (substring expression 0 1))
+        (search-for
+         (cond
+          ; text EXPRESSION
+          ((string-match "^\"[^\"]*\"" expression)
+           (length (match-string 0 expression)))
+          (t (string-match "[[:space:]]+" expression 1)))))
+    search-for))
 
-STRINGSPACE is a dummy parameter for compatibility."
-  (when (boundp 'ebasic-vars)
-    (dolist (i ebasic-vars)
-      (makunbound (ebasic-var-to-symbol i))))
-  (setq ebasic-vars nil))
+; wow, this is hard.
 
-(defun ebasic/new ()
-  "Clear program memory."
-  (save-excursion
-    (set-buffer (get-buffer-create "*ebasic program memory*"))
-    (delete-region (point-min) (point-max))))
+; OK, so if we're looking at an open parenthesis, we need to return the
+; open parenthesis, the expression inside, and the closed parenthesis.
+; If we find an open parenthesis inside the expression, then we need
+; recursively do the same with that.
 
-(defun ebasic/reset ()
-  "Clear all variables and program memory."
-  (ebasic/clear)
-  (ebasic/new))
-
-(defun ebasic/dim (vars)
-  "Set aside array space for VARS."
-  (dolist (i (split-string vars "[, ]" t))
-    (if (string-match ebasic-array-re i)
-        (let ((varname (match-string 1 i))
-              (stringvarp (string= "$" (match-string 2 i)))
-              (size (match-string 3 i)))
-          (add-to-list 'ebasic-vars varname)
-          (set (ebasic-var-to-symbol varname)
-               (make-vector (string-to-number size)
-                            (if stringvarp
-                                ""
-                              0)))))))
+(defun ebasic-parse (expression)
+  "Parse EXPRESSION as a BASIC/algebraic expression."
+  (let (exp-list)
+    (while (not (string= expression ""))
+      (let ((end-block (ebasic-next-parse-block expression)))
+        (setq exp-list
+              (cons (substring expression 0 end-block) exp-list))
+        (setq expression
+              (if end-block
+                  (substring expression (1+ end-block))
+                ""))))
+    exp-list))
 
 (provide 'ebasic-setup)
