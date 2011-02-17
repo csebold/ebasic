@@ -6,6 +6,9 @@
 (require 'ebasic-mode)
 (require 'ebasic-disk)
 (require 'ebasic-graphics)
+(require 'ebasic-state)
+(require 'ebasic-functions)
+(require 'ebasic-setup)
 
 
 
