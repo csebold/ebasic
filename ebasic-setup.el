@@ -51,6 +51,10 @@
           ; text EXPRESSION
           ((string-match "^\"[^\"]*\"" expression)
            (length (match-string 0 expression)))
+          ((string-match "^[+-*/^]" expression)
+           (length (match-string 0 expression)))
+          ((string-match "^[[:digit:]]+" expression)
+           (length (match-string 0 expression)))
           (t (string-match "[[:space:]]+" expression 1)))))
     search-for))
 
@@ -73,5 +77,30 @@
                   (substring expression (1+ end-block))
                 ""))))
     exp-list))
+
+(defun ebasic-eval (expression)
+  "Dummy function for now, FIXME"
+  expression)
+
+(defun ebasic-parse (expression)
+  "Parse EXPRESSION as a BASIC/algebraic expression."
+  (with-temp-buffer
+    (let (tokens)
+      (insert expression)
+      (goto-char (point-min))
+      (while (re-search-forward "\".*?\"" nil t)
+        (setq tokens (cons (match-string 0) tokens))
+        (replace-match (format "\000xb%d\000" (length tokens)))
+        (goto-char (point-min)))
+      (while (re-search-forward "(\\(.*?\\))" nil t)
+        (replace-match (ebasic-eval (match-string 1)))
+        (goto-char (point-min)))
+;      (while (re-search-forward "[[:alpha:]][[:alnum:]]*(.*?)" nil t)
+;        (replace-match (ebasic-eval (match-string 0)))
+;        (goto-char (point-min)))
+      (while (re-search-forward "\000xb\\([[:digit:]]+\\)\000" nil t)
+        (replace-match (nth (string-to-number (string-match 1)) tokens))
+        (goto-char (point-min))))
+    (buffer-string)))
 
 (provide 'ebasic-setup)
