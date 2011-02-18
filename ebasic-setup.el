@@ -103,4 +103,55 @@
         (goto-char (point-min))))
     (buffer-string)))
 
+(defun ebasic-detokenize (return-list stack-hash)
+  "Remove tokens stored in STACK-HASH from RETURN-LIST."
+  (mapcar (lambda (x)
+            (cond
+             ((listp x)
+              (ebasic-detokenize x stack-hash))
+             ((string-match "^\000xe\\([[:digit:]]+\\)\000$" x)
+              (gethash (string-to-number (match-string 1 x)) stack-hash))
+;              (replace-match (gethash (string-to-number (match-string 1 x)) stack-hash) t t x))
+             (t x))) return-list))
+
+(defun ebasic-parse (expression &optional stack-hash)
+  "Parse EXPRESSION as a BASIC/algebraic expression."
+  (let (leave-tokens return-value)
+    (unless stack-hash
+      (setq stack-hash (make-hash-table :test 'eql))
+      (setq leave-tokens t))
+    (save-match-data
+      (setq return-value
+            (cond
+             ((and (stringp expression) (string= expression ""))
+              nil)
+             ((string-match "^\\(.*\\)(\\([^)]*?\\))\\(.*\\)$" expression)
+              (let ((tempvar (ebasic-parse (match-string 2 expression)
+                                           stack-hash)))
+                (puthash (hash-table-count stack-hash)
+                         tempvar stack-hash))
+              (list (ebasic-parse
+                     (concat (match-string 1 expression)
+                             (format "\000xe%d\000" (1- (hash-table-count stack-hash)))
+                             (match-string 3 expression)) stack-hash)))
+             ((string-match "^\\(.*\\)\\(\000xe[[:digit:]]+\000\\)\\(.*\\)$" expression)
+              (append (ebasic-parse (match-string 1 expression) stack-hash)
+                      (list (match-string 2 expression))
+                      (ebasic-parse (match-string 3 expression) stack-hash)))
+             ((string-match "^\\(.*?\\)\\([-+*/^]\\)\\(.*\\)$" expression)
+              (append (ebasic-parse (match-string 1 expression) stack-hash)
+                      (list (match-string 2 expression))
+                      (ebasic-parse (match-string 3 expression) stack-hash)))
+             ((string-match "^\\(.*?\\)\\(\"[^\"]*\"\\)\\(.*\\)$" expression)
+              (append (ebasic-parse (match-string 1 expression) stack-hash)
+                      (list (match-string 2 expression))
+                      (ebasic-parse (match-string 3 expression) stack-hash)))
+             ((string-match "^[[:space:]]*\\([^[:space:]]+\\)[[:space:]]*\\(.*\\)" expression)
+              (append (list (match-string 1 expression))
+                      (ebasic-parse (match-string 2 expression) stack-hash)))
+             (t (list expression)))))
+    (if leave-tokens
+        (ebasic-detokenize return-value stack-hash)
+      return-value)))
+
 (provide 'ebasic-setup)
