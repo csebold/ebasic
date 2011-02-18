@@ -36,6 +36,8 @@ return contents of array VARNAME at INDEX."
 (defun ebasic-set-var (varname value &optional index)
   "Set variable contents of VARNAME to VALUE.  If INDEX is
 non-nil, then set array VARNAME at INDEX to VALUE."
+  (if (listp value)
+      (setq value (ebasic-eval value)))
   (if (eq (ebasic-stringvarp varname) (stringp value))
       (if (member varname ebasic-vars)
           (if index
@@ -46,8 +48,38 @@ non-nil, then set array VARNAME at INDEX to VALUE."
     (ebasic-error "Type mismatch error.")))
 
 (defun ebasic-eval (expression)
-  "Dummy function for now, FIXME"
-  expression)
+  "Evaluate parsed EXPRESSION, return string or number result."
+  (if (not (listp expression))
+      (cond
+       ((string-match "^\"\\([^\"]*\\)\"$" expression)
+        (match-string 1 expression))
+       ((string-match "^\\(-?[.[:digit:]]+\\)$" expression)
+        (string-to-number (match-string 1 expression)))
+       ((member expression ebasic-vars)
+        (ebasic-get-var expression))
+       (t
+        ; this should never happen
+        (read (concat "ebasic-unevaluated/" expression))))
+    (cond
+     ; list with 1 item: just evaluate it
+     ((= (length expression) 1)
+      (ebasic-eval (car expression)))
+     ; first item is a function, second must be its parameters
+     ((fboundp (read (concat "ebasic/" (car expression))))
+      (ebasic-eval
+       (append (funcall (read (concat "ebasic/" (car expression)))
+                        (ebasic-eval (cadr expression)))
+               (cddr expression))))
+     ; first item is an array variable, second must be its index
+     ((and (member (car expression) ebasic-vars)
+           (vectorp (ebasic-get-var (car expression))))
+      (ebasic-eval (append
+                    (ebasic-get-var (car expression)
+                                    (ebasic-eval (cadr expression)))
+                    (cddr expression))))
+    ; something before this or here should catch and eval functions
+     (t
+      (mapcar 'ebasic-eval expression)))))
 
 (defun ebasic-execute (line)
   "Execute command in LINE."
@@ -61,10 +93,24 @@ non-nil, then set array VARNAME at INDEX to VALUE."
 (defun ebasic-execute-parsed (parsed-line)
   "Execute command in list PARSED-LINE."
   (let ((command (read (concat "ebasic/" (car parsed-line))))
+        (var-assign (ebasic-var-to-symbol (car parsed-line)))
         (args (cdr parsed-line)))
-    (if (fboundp command)
-        (funcall command args)
-      (ebasic-error "Syntax error."))))
+    (cond
+     ; the first word is a statement
+     ((fboundp command)
+      (funcall command args))
+     ; the second word is "=", meaning variable assignment
+     ((and (stringp (car args))
+           (string= (car args) "="))
+      (ebasic-set-var (car parsed-line) (ebasic-eval (cdr args))))
+     ; the second word is a list and the third word is "=", meaning
+     ; array variable assignment
+     ((and (listp (car args))
+           (stringp (cadr args))
+           (string= (cadr args) "="))
+      (ebasic-set-var (car parsed-line) (ebasic-eval (cddr args)) (ebasic-eval (car args))))
+     (t
+      (ebasic-error "Syntax error.")))))
 
 (defun ebasic-detokenize (return-list stack-hash)
   "Remove tokens stored in STACK-HASH from RETURN-LIST."
