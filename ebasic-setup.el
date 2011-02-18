@@ -16,6 +16,8 @@
       (message "Error: Line %d: %s" linenum string)
     (message "Error: %s" string)))
 
+; FIXME: arrays should have arbitrary dimensions
+
 (defun ebasic-get-var (varname &optional index)
   "Get variable contents of VARNAME.  If INDEX is non-nil, then
 return contents of array VARNAME at INDEX."
