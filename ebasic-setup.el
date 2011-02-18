@@ -16,40 +16,55 @@
       (message "Error: Line %d: %s" linenum string)
     (message "Error: %s" string)))
 
-(defun ebasic-get-var (varname)
-  "Get variable contents of VARNAME."
-  (if (string-match ebasic-array-re varname)
-      (let ((varrealname (match-string 1 varname))
-            (index (string-to-number (match-string 3 varname))))
-        (if (member varrealname ebasic-vars)
-            (elt (eval (ebasic-var-to-symbol varrealname)) index)
-          (ebasic-error "Array not dimensioned.")))
-    (if (member varname ebasic-vars)
-        (eval (ebasic-var-to-symbol varname))
-      (ebasic-error "Variable not defined."))))
+(defun ebasic-get-var (varname &optional index)
+  "Get variable contents of VARNAME.  If INDEX is non-nil, then
+return contents of array VARNAME at INDEX."
+  (if (member varname ebasic-vars)
+      (if index
+          (elt (eval (ebasic-var-to-symbol varname)) index)
+        (eval (ebasic-var-to-symbol varname)))
+;    (ebasic-error "Variable not defined.")))
+    ; I think actually this just returns zeroes and empty strings
+    (if index
+        (ebasic-error "Variable not defined.")
+      (if (ebasic-stringvarp varname) "" 0))))
 
-(defun ebasic-set-var (varname value)
-  "Set variable contents of VARNAME to VALUE."
-  (if (string-match ebasic-array-re varname)
-      (let ((varrealname (match-string 1 varname))
-            (index (string-to-number (match-string 3 varname))))
-        (if (member varrealname ebasic-vars)
-            ; FIXME: need to check to make sure that type is retained
-            (aset (eval (ebasic-var-to-symbol varrealname)) index value)
-          (ebasic-error "Array not dimensioned.")))
-    (if (member varname ebasic-vars)
-        (set (ebasic-var-to-symbol varname) value)
-      (add-to-list 'ebasic-vars varname)
-      ; FIXME: need to check that type is retained
-      (set (ebasic-var-to-symbol varname) value))))
+(defun ebasic-stringvarp (varname)
+  "Returns t if VARNAME is a string variable, nil if not."
+  (if (string-match "\\$$" varname) t nil))
+
+(defun ebasic-set-var (varname value &optional index)
+  "Set variable contents of VARNAME to VALUE.  If INDEX is
+non-nil, then set array VARNAME at INDEX to VALUE."
+  (if (eq (ebasic-stringvarp varname) (stringp value))
+      (if (member varname ebasic-vars)
+          (if index
+              (aset (eval (ebasic-var-to-symbol varname)) index value)
+            (set (ebasic-var-to-symbol varname) value))
+        (add-to-list 'ebasic-vars varname)
+        (ebasic-set-var varname value index))
+    (ebasic-error "Type mismatch error.")))
 
 (defun ebasic-eval (expression)
   "Dummy function for now, FIXME"
   expression)
 
 (defun ebasic-execute (line)
-  "Execute command in LINE; dummy function, FIXME"
-  t)
+  "Execute command in LINE."
+  (let ((my-line (ebasic-split-list (ebasic-parse line) "'" "rem")))
+    (if (listp (car my-line))
+        (if (= (length my-line) 1)
+            (ebasic-execute-parsed (car my-line))
+          (mapc 'ebasic-execute-parsed my-line))
+      (ebasic-execute-parsed my-line))))
+
+(defun ebasic-execute-parsed (parsed-line)
+  "Execute command in list PARSED-LINE."
+  (let ((command (read (concat "ebasic/" (car parsed-line))))
+        (args (cdr parsed-line)))
+    (if (fboundp command)
+        (funcall command args)
+      (ebasic-error "Syntax error."))))
 
 (defun ebasic-detokenize (return-list stack-hash)
   "Remove tokens stored in STACK-HASH from RETURN-LIST."
@@ -101,12 +116,12 @@
         (ebasic-detokenize return-value stack-hash)
       return-value)))
 
-(defun ebasic-split-list (in-list delimiter)
+(defun ebasic-split-list (in-list &rest delimiter)
   "Split a simple IN-LIST into separate lists based on strings equal to DELIMITER."
   (let (out-list temp-list)
     (while in-list
       (if (and (stringp (car in-list))
-               (string= (car in-list) delimiter))
+               (member (car in-list) delimiter))
           (progn
             (setq out-list (append (list (reverse temp-list)) out-list))
             (setq temp-list nil))

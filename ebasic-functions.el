@@ -23,18 +23,17 @@ STRINGSPACE is a dummy parameter for compatibility."
   (ebasic/clear)
   (ebasic/new))
 
-(defun ebasic/dim (vars)
-  "Set aside array space for VARS."
-  (dolist (i (split-string vars "[, ]" t))
-    (if (string-match ebasic-array-re i)
-        (let ((varname (match-string 1 i))
-              (stringvarp (string= "$" (match-string 2 i)))
-              (size (match-string 3 i)))
-          (add-to-list 'ebasic-vars varname)
-          (set (ebasic-var-to-symbol varname)
-               (make-vector (string-to-number size)
-                            (if stringvarp
-                                ""
-                              0)))))))
+(defun ebasic/dim (args)
+  "Set aside array space for variables in ARGS."
+  (let ((my-args (ebasic-split-list args ",")))
+    (dolist (i my-args)
+      (let ((varname (car i))
+            (size (car (cadr i))))
+        (add-to-list 'ebasic-vars varname)
+        (set (ebasic-var-to-symbol varname)
+             (make-vector (1+ (string-to-number size))
+                          (if (ebasic-stringvarp varname)
+                              ""
+                            0)))))))
 
 (provide 'ebasic-functions)
