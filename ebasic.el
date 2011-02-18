@@ -8,6 +8,8 @@
 (require 'ebasic-graphics)
 (require 'ebasic-state)
 (require 'ebasic-functions)
+(require 'ebasic-statements)
+(require 'ebasic-operators)
 (require 'ebasic-setup)
 
 

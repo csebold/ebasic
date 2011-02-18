@@ -41,18 +41,32 @@ non-nil, then set array VARNAME at INDEX to VALUE."
   (if (eq (ebasic-stringvarp varname) (stringp value))
       (if (member varname ebasic-vars)
           (if index
-              (aset (eval (ebasic-var-to-symbol varname)) index value)
+              (if (listp index)
+                  (aset (eval (ebasic-var-to-symbol varname))
+                        (ebasic-eval index) value)
+                (aset (eval (ebasic-var-to-symbol varname)) index value))
             (set (ebasic-var-to-symbol varname) value))
         (add-to-list 'ebasic-vars varname)
         (ebasic-set-var varname value index))
     (ebasic-error "Type mismatch error.")))
 
+(defun ebasic-make-string (my-string)
+  "Add 'ebasic-string property to MY-STRING to make it an
+official ebasic string."
+  (propertize my-string 'ebasic-string t))
+
+; FIXME: only strings should be strings, other things should be symbols?
+
 (defun ebasic-eval (expression)
   "Evaluate parsed EXPRESSION, return string or number result."
   (if (not (listp expression))
       (cond
+       ((numberp expression)
+        expression)
+       ((get-text-property 0 'ebasic-string expression)
+        expression)
        ((string-match "^\"\\([^\"]*\\)\"$" expression)
-        (match-string 1 expression))
+        (ebasic-make-string (match-string 1 expression)))
        ((string-match "^\\(-?[.[:digit:]]+\\)$" expression)
         (string-to-number (match-string 1 expression)))
        ((member expression ebasic-vars)
@@ -65,21 +79,34 @@ non-nil, then set array VARNAME at INDEX to VALUE."
      ((= (length expression) 1)
       (ebasic-eval (car expression)))
      ; first item is a function, second must be its parameters
-     ((fboundp (read (concat "ebasic/" (car expression))))
+     ((and (stringp (car expression))
+           (fboundp (read (concat "ebasic/" (car expression)))))
       (ebasic-eval
-       (append (funcall (read (concat "ebasic/" (car expression)))
-                        (ebasic-eval (cadr expression)))
+       (append (list
+                (funcall (read (concat "ebasic/" (car expression)))
+                         (ebasic-eval (cadr expression))))
                (cddr expression))))
+     ; second item is an operator, first and third must be its parameters
+     ((and (stringp (cadr expression))
+           (fboundp (read (concat "ebasic-operators/" (cadr expression)))))
+      (funcall (read (concat "ebasic-operators/" (cadr expression)))
+               (ebasic-eval (car expression))
+               (ebasic-eval (cddr expression))))
      ; first item is an array variable, second must be its index
      ((and (member (car expression) ebasic-vars)
            (vectorp (ebasic-get-var (car expression))))
-      (ebasic-eval (append
-                    (ebasic-get-var (car expression)
-                                    (ebasic-eval (cadr expression)))
-                    (cddr expression))))
+      (if (cddr expression)
+          (ebasic-eval (append
+                        (list
+                         (ebasic-get-var (car expression)
+                                         (ebasic-eval (cadr expression))))
+                        (cddr expression)))
+        (ebasic-get-var (car expression)
+                        (ebasic-eval (cadr expression)))))
     ; something before this or here should catch and eval functions
      (t
-      (mapcar 'ebasic-eval expression)))))
+      expression))))
+;      (mapcar 'ebasic-eval expression)))))
 
 (defun ebasic-execute (line)
   "Execute command in LINE."
@@ -102,13 +129,13 @@ non-nil, then set array VARNAME at INDEX to VALUE."
      ; the second word is "=", meaning variable assignment
      ((and (stringp (car args))
            (string= (car args) "="))
-      (ebasic-set-var (car parsed-line) (ebasic-eval (cdr args))))
+      (ebasic-set-var (car parsed-line) (cdr args)))
      ; the second word is a list and the third word is "=", meaning
      ; array variable assignment
      ((and (listp (car args))
            (stringp (cadr args))
            (string= (cadr args) "="))
-      (ebasic-set-var (car parsed-line) (ebasic-eval (cddr args)) (ebasic-eval (car args))))
+      (ebasic-set-var (car parsed-line) (cddr args) (car args)))
      (t
       (ebasic-error "Syntax error.")))))
 
