@@ -47,6 +47,10 @@
   "Dummy function for now, FIXME"
   expression)
 
+(defun ebasic-execute (line)
+  "Execute command in LINE; dummy function, FIXME"
+  t)
+
 (defun ebasic-detokenize (return-list stack-hash)
   "Remove tokens stored in STACK-HASH from RETURN-LIST."
   (mapcar (lambda (x)
@@ -85,7 +89,7 @@
               (append (ebasic-parse (match-string 1 expression) stack-hash)
                       (list (match-string 2 expression))
                       (ebasic-parse (match-string 3 expression) stack-hash)))
-             ((string-match "^\\(.*?\\)[[:space:]]*\\([-+*/^]\\)[[:space:]]*\\(.*\\)$" expression)
+             ((string-match "^\\(.*?\\)[[:space:]]*\\([-+*/,^]\\)[[:space:]]*\\(.*\\)$" expression)
               (append (ebasic-parse (match-string 1 expression) stack-hash)
                       (list (match-string 2 expression))
                       (ebasic-parse (match-string 3 expression) stack-hash)))
@@ -96,5 +100,19 @@
     (if leave-tokens
         (ebasic-detokenize return-value stack-hash)
       return-value)))
+
+(defun ebasic-split-list-by-comma (in-list)
+  "Split a simple list into separate lists based on comma strings."
+  (let (out-list temp-list)
+    (while in-list
+      (if (and (stringp (car in-list))
+               (string= (car in-list) ","))
+          (progn
+            (setq out-list (append (list (reverse temp-list)) out-list))
+            (setq temp-list nil))
+        (setq temp-list (append (list (car in-list)) temp-list)))
+      (setq in-list (cdr in-list)))
+    (setq out-list (append (list (reverse temp-list)) out-list))
+    (reverse out-list)))
 
 (provide 'ebasic-setup)
