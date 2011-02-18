@@ -89,7 +89,7 @@
               (append (ebasic-parse (match-string 1 expression) stack-hash)
                       (list (match-string 2 expression))
                       (ebasic-parse (match-string 3 expression) stack-hash)))
-             ((string-match "^\\(.*?\\)[[:space:]]*\\([-+*/,^]\\)[[:space:]]*\\(.*\\)$" expression)
+             ((string-match "^\\(.*?\\)[[:space:]]*\\([-+*/,'^]\\)[[:space:]]*\\(.*\\)$" expression)
               (append (ebasic-parse (match-string 1 expression) stack-hash)
                       (list (match-string 2 expression))
                       (ebasic-parse (match-string 3 expression) stack-hash)))
@@ -101,12 +101,12 @@
         (ebasic-detokenize return-value stack-hash)
       return-value)))
 
-(defun ebasic-split-list-by-comma (in-list)
-  "Split a simple list into separate lists based on comma strings."
+(defun ebasic-split-list (in-list delimiter)
+  "Split a simple IN-LIST into separate lists based on strings equal to DELIMITER."
   (let (out-list temp-list)
     (while in-list
       (if (and (stringp (car in-list))
-               (string= (car in-list) ","))
+               (string= (car in-list) delimiter))
           (progn
             (setq out-list (append (list (reverse temp-list)) out-list))
             (setq temp-list nil))
