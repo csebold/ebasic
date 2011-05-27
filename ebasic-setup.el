@@ -59,7 +59,45 @@ official ebasic string."
 
 ; FIXME: only strings should be strings, other things should be symbols?
 
-(defun ebasic-eval (expression)
+(defun ebasic-tokenize (add-to-hash hashtable)
+  "Add ADD-TO-HASH to HASHTABLE and return a token."
+  (let ((htc (hash-table-count hashtable)))
+    (puthash htc add-to-hash hashtable)
+    (concat "ebt" (string (+ 65 htc)) "ebt")))
+
+(defun ebasic-detokenize (expression hashtable)
+  "Replace tokens in EXPRESSION from HASHTABLE."
+  (with-temp-buffer
+    (insert expression)
+    (goto-char (point-min))
+    (while (re-search-forward "ebt\\([[:alpha:]]\\)ebt" nil t)
+      (replace-match (gethash
+                      (- (string-to-char (match-string 1)) 65)
+                      hashtable) t t)
+      (goto-char (point-min)))
+    (buffer-string)))
+
+(defun ebasic-string-escape (expression stack-hash)
+  "Take all ebasic strings out of EXPRESSION and store them in
+STACK-HASH, tokenizing the results."
+  (save-match-data
+    (cond
+     ((string-match "\\(\".*?\"\\)" expression)
+      (ebasic-string-escape
+       (replace-match (ebasic-tokenize
+                       (match-string 1 expression)
+                       stack-hash) t t expression)
+       stack-hash))
+     ((string-match "\\([[:alpha:]]+\\$\\)" expression)
+      (ebasic-string-escape
+       (replace-match (ebasic-tokenize
+                       (match-string 1 expression)
+                       stack-hash) t t expression)
+       stack-hash))
+     (t
+      expression))))
+
+(defun ebasic-eval (expression &optional stringp)
   "Evaluate parsed EXPRESSION, return string or number result."
   (if (not (listp expression))
       (cond
@@ -105,10 +143,15 @@ official ebasic string."
                         (cddr expression)))
         (ebasic-get-var (car expression)
                         (ebasic-eval (cadr expression)))))
-    ; something before this or here should catch and eval functions
+     ; hand off to calc package
      (t
-      expression))))
-;      (mapcar 'ebasic-eval expression)))))
+      (let (new-expr)
+        (dolist (i expression)
+          (if (listp i)
+              (setq new-expr
+                    (append (ebasic-eval i) new-expr))
+            (setq new-expr (append (list (calc-eval i)) new-expr))))
+        (calc-eval (apply 'concat new-expr)))))))
 
 (defun ebasic-execute (line)
   "Execute command in LINE."
@@ -141,15 +184,31 @@ official ebasic string."
      (t
       (ebasic-error "Syntax error.")))))
 
-(defun ebasic-detokenize (return-list stack-hash)
+(defun ebasic-old-detokenize (return-list stack-hash)
   "Remove tokens stored in STACK-HASH from RETURN-LIST."
   (mapcar (lambda (x)
             (cond
              ((listp x)
-              (ebasic-detokenize x stack-hash))
+              (ebasic-old-detokenize x stack-hash))
              ((string-match "^\000xe\\([[:digit:]]+\\)\000$" x)
-              (ebasic-detokenize (gethash (string-to-number (match-string 1 x)) stack-hash) stack-hash))
+              (ebasic-old-detokenize (gethash (string-to-number (match-string 1 x)) stack-hash) stack-hash))
              (t x))) return-list))
+
+(defun ebasic-unparse (parse-list)
+  "Return PARSE-LIST as a BASIC/algebraic expression."
+  (apply 'concat
+         (mapcar (lambda (x)
+                   (concat
+                    (cond
+                     ((listp x)
+                      (concat "("
+                              (ebasic-unparse x)
+                              ")"))
+                     ((numberp x)
+                      (number-to-string x))
+                     (t
+                      x))
+                    " ")) parse-list)))
 
 (defun ebasic-parse (expression &optional stack-hash)
   "Parse EXPRESSION as a BASIC/algebraic expression."
@@ -188,7 +247,7 @@ official ebasic string."
                       (ebasic-parse (match-string 2 expression) stack-hash)))
              (t (list expression)))))
     (if leave-tokens
-        (ebasic-detokenize return-value stack-hash)
+        (ebasic-old-detokenize return-value stack-hash)
       return-value)))
 
 (defun ebasic-split-list (in-list &rest delimiter)

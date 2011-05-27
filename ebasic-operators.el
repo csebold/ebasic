@@ -1,6 +1,8 @@
 ; ebasic-operators.el
 ; By Charles Sebold
 
+(require 'calc)
+
 (defun ebasic-operators/+ (arg1 arg2)
   "Add together ARG1 and ARG2 if numbers, or concatenate them if
 strings."
