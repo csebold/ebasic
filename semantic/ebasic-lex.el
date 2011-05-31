@@ -28,22 +28,24 @@
 
 (defun ebasic-lex (instring)
   "Convert INSTRING into ebasic tokens."
-  (if (string= instring "")
-      nil
+  (let (temp)
     (with-temp-buffer
       (insert instring)
       (goto-char (point-min))
-      (let ((first-token
-             (catch 'found
-               (dolist (i ebasic-tokens)
-                 (when (looking-at (car i))
-                   (re-search-forward (car i) nil t)
-                   (throw 'found (cons (cdr i) (match-string 0)))))
-               'sn)))
-        (if (eq first-token 'sn)
-            'sn
-          (cons first-token
-                (ebasic-lex (buffer-substring (point)
-                                              (point-max)))))))))
+      (while (not (= (point) (point-max)))
+        (let ((first-token
+               (catch 'found
+                 (dolist (i ebasic-tokens)
+                   (when (looking-at (car i))
+                     (re-search-forward (car i) nil t)
+                     (throw 'found (cons (cdr i)
+                                         (match-string 0)))))
+                 'sn)))
+          (if (eq first-token 'sn)
+              (progn
+                (setq temp (list 'sn))
+                (goto-char (point-max)))
+            (push first-token temp)))))
+    (reverse temp)))
 
 (provide 'ebasic-lex)
