@@ -11,7 +11,7 @@
     ("[/]"                                  . divided)
     ("\\^"                                  . exponent)
     ("="                                    . equals)
-    ("<>"                                   . notequals)
+    ("<>"                                   . ne)
     ("<"                                    . lt)
     ("<="                                   . le)
     ("=<"                                   . le)
@@ -46,6 +46,8 @@
                 (setq temp (list 'sn))
                 (goto-char (point-max)))
             (push first-token temp)))))
-    (reverse temp)))
+    (reverse (mapcar (lambda (x) (if (eq (car x) 'identifier)
+                                     (cons 'identifier (upcase (cdr x)))
+                                   x)) temp))))
 
 (provide 'ebasic-lex)
