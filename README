@@ -1,0 +1,11 @@
+-*- mode: text; -*-
+
+This is an attempt to implement old-school early '80s Microsoft BASIC
+interpreter in Emacs.
+
+When there's something here worth trying, this will point to basic
+installation and usage instructions.  For now it's mostly an exercise in
+learning how to do things like this.
+
+Charles Sebold
+Fri  3 Jun 2011 07:57
