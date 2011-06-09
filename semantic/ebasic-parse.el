@@ -1,5 +1,7 @@
 ; ebasic-parse.el
 
+(require 'ebasic-lex)
+
 (defvar ebasic-operator-order
   '(exponent times divided plus minus
              equals ne lt le gt ge)
@@ -9,29 +11,75 @@
 
 (defvar ebasic-parse-expression-syntax
   ; operators
-  '((ebasic/exp      (:expression exponent :expression)  (1 3))
-    (ebasic/mul      (:expression times :expression)     (1 3))
-    (ebasic/div      (:expression divided :expression)   (1 3))
-    (ebasic/add      (:expression plus :expression)      (1 3))
-    (ebasic/sub      (:expression minus :expression)     (1 3))
-    (ebasic/eq       (:expression equals :expression)    (1 3))
-    (ebasic/neq      (:expression ne :expression)        (1 3))
-    (ebasic/lt       (:expression lt :expression)        (1 3))
-    (ebasic/le       (:expression le :expression)        (1 3))
-    (ebasic/gt       (:expression gt :expression)        (1 3))
-    (ebasic/ge       (:expression ge :expression)        (1 3))
+  '((ebasic/exp      (:expression exponent :expression)             (1 3))
+    (ebasic/mul      (:expression times :expression)                (1 3))
+    (ebasic/div      (:expression divided :expression)              (1 3))
+    (ebasic/add      (:expression plus :expression)                 (1 3))
+    (ebasic/sub      (:expression minus :expression)                (1 3))
+    (ebasic/and      (:expression (identifier . "AND") :expression) (1 3))
+    (ebasic/or       (:expression (identifier . "OR") :expression)  (1 3))
+    (ebasic/eq       (:expression equals :expression)               (1 3))
+    (ebasic/neq      (:expression ne :expression)                   (1 3))
+    (ebasic/lt       (:expression lt :expression)                   (1 3))
+    (ebasic/le       (:expression le :expression)                   (1 3))
+    (ebasic/gt       (:expression gt :expression)                   (1 3))
+    (ebasic/ge       (:expression ge :expression)                   (1 3))
     ; functions
     (ebasic/chr      ((identifier . "CHR$") group)       2)
     (ebasic/asc      ((identifier . "ASC") group)        2)
     )
-  "Parse syntax for all possible expressions.")
+  "Parse syntax for all possible expressions.
+
+Syntax is:
+(ebasic/function (grammar) (arguments))
+
+Example:
+(ebasic/add (:expression plus :expression) (1 3))
+
+The above will find any case where two expressions are divided by
+a lexed PLUS, and pass arguments 1 and 3 to the Emacs Lisp
+function `ebasic/add' as its arguments.  Grammar elements that
+must be in parentheses should be marked only as 'group' to make
+sure it gets through `ebasic-parse'.  Grammar elements that can
+themselves be BASIC expressions should be marked only by the
+keyword :expression.  Arguments are members of the grammar list
+starting with 1 (NOT zero!).  You can insert keywords into the
+arguments and they will be passed verbatim to the ebasic
+function.")
 
 (defvar ebasic-parse-statement-syntax
   ; format: ebasic/FUNCTION syntax-sexp arg-test-function arg-conversion-function
   '((ebasic/let      (identifier equals :expression) (1 3))
     (ebasic/new      ((identifier . "NEW"))          nil)
-    (ebasic/goto     ((identifier . "GOTO") number)  1))
+    (ebasic/goto     ((identifier . "GOTO") number)  2))
   "Parse syntax for all possible statements.")
+
+(defun ebasic-literal (x)
+  "Return literal value when possible."
+  (cond
+   ((and (listp x)
+         (eq (car x) 'string)
+         (stringp (cdr x)))
+    (cdr x))
+   ((and (listp x)
+         (eq (car x) 'number)
+         (and (stringp (cdr x))
+              (string-match
+               "^-?\\(?:[[:digit:]]*\\.[[:digit:]]+\\|[[:digit:]]+\\.[[:digit:]]?\\|[[:digit:]]+\\)$"
+               (cdr x))))
+    (string-to-number (cdr x)))
+   (t
+    x)))
+
+(defun ebasic-ungroup (x)
+  "Remove 'group' identifiers from X, leaving lists intact."
+  (if (and (listp x) x)
+      (if (eq (car x) 'group)
+          (ebasic-ungroup (cdr x))
+        (if (and (= (safe-length x) 1) (listp (car x)))
+            (list (ebasic-ungroup (car x)))
+          (cons (car x) (ebasic-ungroup (cdr x)))))
+    x))
 
 (defun ebasic-parse-expression (x)
   "Parse expression X using `ebasic-parse-expression-syntax'."
@@ -124,47 +172,66 @@ GRAMMAR; otherwise return nil."
 
 (defun ebasic-parse (x)
   "Parse lex X using `ebasic-parse-syntax'."
-  (when (eq (car x) 'group)
-    (setq x (cdr x)))
-  (catch 'found
-    (dolist (i ebasic-parse-syntax)
-      (let ((func (car i))
-            (parse (nth 1 i))
-            (argsorder (nth 2 i))
-            (matchp t)
-            expressionp)
-        (if (or (= (length x) (length parse))
-                (and (memq :expression parse)
-                     (>= (length x) (length parse))))
-            (dotimes (j (length parse))
-              (cond
-               ((and (keywordp (nth j parse))
-                     (eq (nth j parse) :expression))
-                (setq expressionp t))
-               ((and (consp (nth j parse))
-                     (not (ebasic-eq-id (nth j x) (nth j parse))))
-                (setq matchp nil))
-               ((and (atom (nth j parse))
-                     (not (eq (car (nth j x)) (nth j parse))))
-                (setq matchp nil))))
-          (setq matchp nil))
-        (when matchp
-          (throw 'found
-                 (if argsorder
-                     (let (temp)
-                       (if (listp argsorder)
-                           (setq temp
-                                 (mapcar (lambda (y) (nth (1- y) x))
-                                         argsorder))
-                         (setq temp (nth (1- argsorder) x)))
-                       (cons func (if (or (and expressionp
-                                               (> 1 (length temp)))
-                                          (and (listp temp)
-                                               (eq (car temp) 'group)))
-                                      (ebasic-parse-expression temp)
-                                    temp)))
-                   (list func))))))
-    'sn))
+  (ebasic-ungroup
+   (if (eq (car x) 'group)
+       (cons 'group (ebasic-parse-expression (cdr x)))
+     (if (and (listp x) (= 1 (safe-length x)))
+         (ebasic-parse-expression (car x))
+       (catch 'found
+         (dolist (i ebasic-parse-syntax)
+           (let ((func (car i))
+                 (parse (nth 1 i))
+                 (argsorder (nth 2 i))
+                 (matchp t)
+                 expressionp groupp)
+             (if (or (= (length x) (length parse))
+                     (and (memq :expression parse)
+                          (>= (length x) (length parse))))
+                 (dotimes (j (length parse))
+                   (when (and (symbolp (nth j parse))
+                              (eq (nth j parse) 'group))
+                     (setq groupp t))
+                   (cond
+                    ((and (keywordp (nth j parse))
+                          (eq (nth j parse) :expression))
+                     (setq expressionp t))
+                    ((and (consp (nth j parse))
+                          (not (ebasic-eq-id (nth j x) (nth j parse))))
+                     (setq matchp nil))
+                    ((and (atom (nth j parse))
+                          (not (eq (car (nth j x)) (nth j parse))))
+                     (setq matchp nil))))
+               (setq matchp nil))
+             (when matchp
+               (throw 'found
+                      (if argsorder
+                          (let (temp)
+                            (if (listp argsorder)
+                                (setq temp
+                                      (mapcar (lambda (y)
+                                                (if (keywordp y)
+                                                    y
+                                                  (let ((temp2 (nth (1- y) x)))
+                                                    (if (and (listp temp2)
+                                                             (eq (car temp2) 'group))
+                                                        (ebasic-parse-expression temp2)
+                                                      (ebasic-literal temp2)))))
+                                              argsorder))
+                              (setq temp
+                                    (if (and (listp temp)
+                                             (eq (car temp) 'group))
+                                        (ebasic-parse-expression (nth (1- argsorder) x))
+                                      (ebasic-literal (nth (1- argsorder) x)))))
+                            (cons func (cond
+                                        ((and expressionp
+                                              (> 1 (length temp)))
+                                         (ebasic-parse-expression temp))
+                                        ((and (listp temp)
+                                              (eq (car temp) 'group))
+                                         (list (ebasic-parse-expression temp)))
+                                        (t temp))))
+                        (list func))))))
+         'sn)))))
 
 (defun ebasic-parse-multistatement (inlex)
   "Parse INLEX and return a list of statements."
