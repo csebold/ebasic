@@ -83,8 +83,7 @@ function.")
 
 (defun ebasic-parse-expression (x)
   "Parse expression X using `ebasic-parse-expression-syntax'."
-  (let ((ebasic-parse-syntax ebasic-parse-expression-syntax))
-    (ebasic-parse x)))
+  (ebasic-parse-expression-internal x))
 
 (defun ebasic-parse-statement (x)
   "Parse expression X using `ebasic-parse-statement-syntax'."
@@ -99,12 +98,18 @@ function.")
 
 (defun ebasic-eq-id (x y)
   "Determine if X and Y are equal identifiers."
-  (and (eq (car x) (car y))
-       (string= (cdr x) (cdr y))))
+  (if (and (listp x) (listp y))
+      (and (eq (car x) (car y))
+           (string= (cdr x) (cdr y)))
+    (if (listp x)
+        (and (eq (car x) y))
+      (and (eq x (car y))))))
 
 (defun ebasic-eq-types (x y)
   "Determine if X and Y are the same type."
-  (eq (if (consp x) (car x) x) (if (consp y) (car y) y)))
+  (or (eq x :expression)
+      (eq y :expression)
+      (eq (if (consp x) (car x) x) (if (consp y) (car y) y))))
 
 (defun ebasic-separate (list elt)
   "Separate LIST by ELT, return the group before the first ELT
@@ -157,26 +162,114 @@ GRAMMAR; otherwise return nil."
                 (setq acc nil))))
           (setq i (1+ i)))))
     (reverse acc)))
-            
 
-; FIXME: need to be able to turn (identifier equals :expression
-; some-other-lex) into a list of things that can be reached by number,
-; so they can be passed to functions.  Then we can do something like:
+(defun ebasic-first-instance (element list &optional testpred)
+  "Return the index of the first time ELEMENT shows up in LIST.
+If TESTPRED is not specified then it tests using `eq'."
+  (unless testpred
+    (setq testpred 'eq))
+  (catch 'e-f-i
+    (dotimes (i (safe-length list))
+      (when (funcall testpred element (nth i list))
+        (throw 'e-f-i i)))
+    nil))
 
-; (ebasic/let (identifier equals :expression) nil (ebasic-parse-expression 3))
+(defun ebasic-parse-equal (list1 list2)
+  "Determine if LIST1 and LIST2 are equal in terms of parsing."
+  (and (= (length list1) (length list2))
+       (not
+        (memq nil
+              (let (temp)
+                (dotimes (i (length list1))
+                  (push (ebasic-eq-types (nth i list1)
+                                         (nth i list2)) temp))
+                temp)))))
 
-; and have it work as expected.
+(defun ebasic-match-parse (list matchlist)
+  "If MATCHLIST is a sublist of LIST, then return a list of three
+elements: the list up to MATCHLIST, the part that matched, and
+the part after MATCHLIST; otherwise just return nil."
+  (let (prematch
+        (postmatch list))
+    (catch 'e-m-p
+      (while (>= (length postmatch) (length matchlist))
+        (let ((test (butlast postmatch (- (length postmatch)
+                                          (length matchlist)))))
+          (if (ebasic-parse-equal matchlist test)
+              (throw 'e-m-p
+                     (list (reverse prematch)
+                           test (last postmatch
+                                      (- (length postmatch)
+                                         (length matchlist)))))
+            (push (pop postmatch) prematch))))
+      (list list nil nil))))
 
-; could do it by unparsing and grouping - tell the system to keep adding
-; to GROUP until it reaches NEXTIDENTIFIER or something like that.
+(defun ebasic-assemble-args (func expr argsorder)
+  "Assemble function FUNC with arguments from EXPR according to
+ARGSORDER."
+  (if argsorder
+      (let (temp)
+        (if (listp argsorder)
+            (setq temp
+                  (mapcar (lambda (y)
+                            (if (keywordp y)
+                                y
+                              (let ((temp2 (nth (1- y) expr)))
+                                (if (and (listp temp2)
+                                         (eq (car temp2) 'group))
+                                    (ebasic-parse-expression-internal temp2)
+                                  (ebasic-literal temp2)))))
+                          argsorder))
+          (setq temp
+                (if (and (listp temp)
+                         (eq (car temp) 'group))
+                    (ebasic-parse-expression-internal (nth (1- argsorder) expr))
+                  (ebasic-literal (nth (1- argsorder) expr)))))
+        (cons func (if (and (listp temp)
+                            (eq (car temp) 'group))
+                       (list (ebasic-parse-expression-internal temp))
+                     temp)))
+    (list func)))
+
+(defun ebasic-parse-expression-internal (x)
+  "Parse lex X using `ebasic-parse-expression-syntax'."
+  (and x
+       (catch 'e-p-e
+         (dolist (i ebasic-parse-expression-syntax)
+           (let* ((func (car i))
+                  (parse (nth 1 i))
+                  (argsorder (nth 2 i))
+                  (matchp t)
+                  (emp (ebasic-match-parse x parse))
+                  expressionp groupp)
+             (when (second emp)
+               (throw 'e-p-e
+                      (cond
+                       ((and (not (car emp))
+                             (not (third emp)))
+                        (ebasic-assemble-args func (second emp) argsorder))
+                       ((not (car emp))
+                        (ebasic-parse-expression-internal
+                         (append (list (ebasic-assemble-args func (second emp) argsorder))
+                                 (third emp))))
+                       ((not (third emp))
+                        (ebasic-parse-expression-internal
+                         (append (car emp)
+                                 (list (ebasic-assemble-args func (second emp) argsorder)))))
+                       (t
+                        (ebasic-parse-expression-internal
+                         (append (car emp)
+                                 (list (ebasic-assemble-args func (second emp) argsorder))
+                                 (third emp)))))))))
+         x)))
 
 (defun ebasic-parse (x)
   "Parse lex X using `ebasic-parse-syntax'."
   (ebasic-ungroup
    (if (eq (car x) 'group)
-       (cons 'group (ebasic-parse-expression (cdr x)))
-     (if (and (listp x) (= 1 (safe-length x)))
-         (ebasic-parse-expression (car x))
+       (cons 'group (ebasic-parse (cdr x)))
+     (if (and (listp x) (= 1 (safe-length x)) (listp (cdr x)))
+         (ebasic-parse (car x))
        (catch 'found
          (dolist (i ebasic-parse-syntax)
            (let ((func (car i))
@@ -184,9 +277,9 @@ GRAMMAR; otherwise return nil."
                  (argsorder (nth 2 i))
                  (matchp t)
                  expressionp groupp)
-             (if (or (= (length x) (length parse))
+             (if (or (= (safe-length x) (length parse))
                      (and (memq :expression parse)
-                          (>= (length x) (length parse))))
+                          (>= (safe-length x) (length parse))))
                  (dotimes (j (length parse))
                    (when (and (symbolp (nth j parse))
                               (eq (nth j parse) 'group))
@@ -209,6 +302,12 @@ GRAMMAR; otherwise return nil."
                             (if (listp argsorder)
                                 (setq temp
                                       (mapcar (lambda (y)
+                                                ; if this is an
+                                                ; expression, then you
+                                                ; need to reach out and
+                                                ; grab everything else
+                                                ; up to this point or
+                                                ; past it
                                                 (if (keywordp y)
                                                     y
                                                   (let ((temp2 (nth (1- y) x)))
