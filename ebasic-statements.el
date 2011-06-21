@@ -10,6 +10,7 @@ STRINGSPACE is a dummy parameter for compatibility."
   (when (boundp 'ebasic-vars)
     (dolist (i ebasic-vars)
       (makunbound (ebasic-var-to-symbol i))))
+  (setq ebasic-stack nil)
   (setq ebasic-vars nil))
 
 (defun ebasic/new ()
@@ -35,5 +36,19 @@ STRINGSPACE is a dummy parameter for compatibility."
                           (if (ebasic-stringvarp varname)
                               (ebasic-make-string "")
                             0)))))))
+
+(defun ebasic/print (&rest args)
+  "Print ARGS."
+  ; FIXME
+  (message "ebasic/print: %S" args))
+
+(defun ebasic/for (var start end &optional step)
+  "Ebasic for loop."
+  (unless step (setq step 1))
+  (when (or (and (> 0 step) (>= start (+ step end)))
+            (and (< 0 step) (<= start (+ step end))))
+    (progn
+      (push (list 'for var end step ebasic-substatement-number) ebasic-stack)
+      (ebasic-set-var (cdr var) start))))
 
 (provide 'ebasic-statements)

@@ -51,6 +51,8 @@ function.")
   ; format: ebasic/FUNCTION syntax-sexp arg-test-function arg-conversion-function
   '((ebasic/let      (identifier equals :expression) (1 3))
     (ebasic/new      ((identifier . "NEW"))          nil)
+    (ebasic/clear    ((identifier . "CLEAR"))        nil)
+    (ebasic/clear    ((identifier . "CLEAR") number) 2)
     (ebasic/goto     ((identifier . "GOTO") number)  2)
     (ebasic/gosub    ((identifier . "GOSUB") number) 2)
     (ebasic/stop     ((identifier . "STOP"))         nil)
@@ -159,15 +161,15 @@ the part after MATCHLIST; otherwise just return nil."
   (let (prematch
         (postmatch list))
     (catch 'e-m-p
-      (while (>= (length postmatch) (length matchlist))
-        (let ((test (butlast postmatch (- (length postmatch)
-                                          (length matchlist)))))
+      (while (>= (safe-length postmatch) (safe-length matchlist))
+        (let ((test (butlast postmatch (- (safe-length postmatch)
+                                          (safe-length matchlist)))))
           (if (ebasic-parse-equal matchlist test)
               (throw 'e-m-p
                      (list (reverse prematch)
                            test (last postmatch
-                                      (- (length postmatch)
-                                         (length matchlist)))))
+                                      (- (safe-length postmatch)
+                                         (safe-length matchlist)))))
             (push (pop postmatch) prematch))))
       (list list nil nil))))
 
@@ -260,7 +262,9 @@ ARGSORDER."
                           (eq (nth j parse) :expression))
                      (setq expressionp t))
                     ((and (consp (nth j parse))
-                          (not (ebasic-eq-id (nth j x) (nth j parse))))
+                          (not (ebasic-eq-id x (nth j parse))))
+; FIXME: replacing the below with the above may not have been right
+;                          (not (ebasic-eq-id (nth j x) (nth j parse))))
                      (setq matchp nil))
                     ((and (atom (nth j parse))
                           (not (eq (car (nth j x)) (nth j parse))))
@@ -273,12 +277,6 @@ ARGSORDER."
                             (if (listp argsorder)
                                 (setq temp
                                       (mapcar (lambda (y)
-                                                ; if this is an
-                                                ; expression, then you
-                                                ; need to reach out and
-                                                ; grab everything else
-                                                ; up to this point or
-                                                ; past it
                                                 (if (keywordp y)
                                                     y
                                                   (let ((temp2 (nth (1- y) x)))
@@ -287,7 +285,9 @@ ARGSORDER."
                                                            (eq (car temp) 'group))
                                                       (ebasic-parse-expression temp2))
                                                      (restp
-                                                      (ebasic-parse-expression (nthcdr (1- argsorder) x)))
+                                                      (mapcar 'ebasic-literal
+                                                              (mapcar 'ebasic-parse-expression
+                                                                      (nthcdr (1- argsorder) x))))
                                                      (t
                                                       (ebasic-literal temp2))))))
                                               argsorder))
@@ -297,10 +297,12 @@ ARGSORDER."
                                            (eq (car temp) 'group))
                                       (ebasic-parse-expression (nth (1- argsorder) x)))
                                      (restp
-                                      (ebasic-parse-expression (nthcdr (1- argsorder) x)))
+                                      (mapcar 'ebasic-literal
+                                              (mapcar 'ebasic-parse-expression (nthcdr (1- argsorder) x))))
                                      (t
                                       (ebasic-literal (nth (1- argsorder) x))))))
                             (cons func (cond
+                                        (restp temp)
                                         ((and expressionp
                                               (> 1 (safe-length temp)))
                                          (ebasic-parse-expression temp))

@@ -8,6 +8,12 @@
   ; FIXME: the array index will have to be replaced by a parser
   "Regexp to parse variable name, string flag, and index.")
 
+(defvar ebasic-stack nil
+  "Ebasic stack list for subroutines, for/next loops, etc.")
+
+(defvar ebasic-vars nil
+  "Ebasic index of variable names as strings.")
+
 (defun ebasic-var-to-symbol (varname)
   "Convert ebasic variable name VARNAME to emacs symbol."
   (read (concat "ebasic-var/" varname)))
@@ -115,7 +121,9 @@ STACK-HASH, tokenizing the results."
 
 (defun ebasic-execute (instring)
   "Lex INSTRING and execute."
-  (dolist (i (ebasic-parse-final (ebasic-lex instring)))
-    (eval i)))
+  (let ((ebasic-command-list (ebasic-parse-final (ebasic-lex instring))))
+    (dotimes (ebasic-substatement-number (safe-length ebasic-command-list))
+      (let ((i (nth ebasic-substatement-number ebasic-command-list)))
+        (apply 'funcall (car i) (cdr i))))))
 
 (provide 'ebasic-setup)
