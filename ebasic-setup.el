@@ -1,6 +1,8 @@
 ; ebasic-setup.el
 ; By Charles Sebold
 
+(require 'ebasic-parse)
+
 (defvar ebasic-array-re
   "\\([[:alpha:]]+\\(\\$?\\)\\)(\\([[:digit:]]+\\)"
   ; FIXME: the array index will have to be replaced by a parser
@@ -97,159 +99,6 @@ STACK-HASH, tokenizing the results."
      (t
       expression))))
 
-(defun ebasic-eval (expression &optional stringp)
-  "Evaluate parsed EXPRESSION, return string or number result."
-  (if (not (listp expression))
-      (cond
-       ((numberp expression)
-        expression)
-       ((get-text-property 0 'ebasic-string expression)
-        expression)
-       ((string-match "^\"\\([^\"]*\\)\"$" expression)
-        (ebasic-make-string (match-string 1 expression)))
-       ((string-match "^\\(-?[.[:digit:]]+\\)$" expression)
-        (string-to-number (match-string 1 expression)))
-       ((member expression ebasic-vars)
-        (ebasic-get-var expression))
-       (t
-        ; this should never happen
-        (read (concat "ebasic-unevaluated/" expression))))
-    (cond
-     ; list with 1 item: just evaluate it
-     ((= (length expression) 1)
-      (ebasic-eval (car expression)))
-     ; first item is a function, second must be its parameters
-     ((and (stringp (car expression))
-           (fboundp (read (concat "ebasic/" (car expression)))))
-      (ebasic-eval
-       (append (list
-                (funcall (read (concat "ebasic/" (car expression)))
-                         (ebasic-eval (cadr expression))))
-               (cddr expression))))
-     ; second item is an operator, first and third must be its parameters
-     ((and (stringp (cadr expression))
-           (fboundp (read (concat "ebasic-operators/" (cadr expression)))))
-      (funcall (read (concat "ebasic-operators/" (cadr expression)))
-               (ebasic-eval (car expression))
-               (ebasic-eval (cddr expression))))
-     ; first item is an array variable, second must be its index
-     ((and (member (car expression) ebasic-vars)
-           (vectorp (ebasic-get-var (car expression))))
-      (if (cddr expression)
-          (ebasic-eval (append
-                        (list
-                         (ebasic-get-var (car expression)
-                                         (ebasic-eval (cadr expression))))
-                        (cddr expression)))
-        (ebasic-get-var (car expression)
-                        (ebasic-eval (cadr expression)))))
-     ; hand off to calc package
-     (t
-      (let (new-expr)
-        (dolist (i expression)
-          (if (listp i)
-              (setq new-expr
-                    (append (ebasic-eval i) new-expr))
-            (setq new-expr (append (list (calc-eval i)) new-expr))))
-        (calc-eval (apply 'concat new-expr)))))))
-
-(defun ebasic-execute (line)
-  "Execute command in LINE."
-  (let ((my-line (ebasic-split-list (ebasic-parse line) "'" "rem")))
-    (if (listp (car my-line))
-        (if (= (length my-line) 1)
-            (ebasic-execute-parsed (car my-line))
-          (mapc 'ebasic-execute-parsed my-line))
-      (ebasic-execute-parsed my-line))))
-
-(defun ebasic-execute-parsed (parsed-line)
-  "Execute command in list PARSED-LINE."
-  (let ((command (read (concat "ebasic/" (car parsed-line))))
-        (var-assign (ebasic-var-to-symbol (car parsed-line)))
-        (args (cdr parsed-line)))
-    (cond
-     ; the first word is a statement
-     ((fboundp command)
-      (funcall command args))
-     ; the second word is "=", meaning variable assignment
-     ((and (stringp (car args))
-           (string= (car args) "="))
-      (ebasic-set-var (car parsed-line) (cdr args)))
-     ; the second word is a list and the third word is "=", meaning
-     ; array variable assignment
-     ((and (listp (car args))
-           (stringp (cadr args))
-           (string= (cadr args) "="))
-      (ebasic-set-var (car parsed-line) (cddr args) (car args)))
-     (t
-      (ebasic-error "Syntax error.")))))
-
-(defun ebasic-old-detokenize (return-list stack-hash)
-  "Remove tokens stored in STACK-HASH from RETURN-LIST."
-  (mapcar (lambda (x)
-            (cond
-             ((listp x)
-              (ebasic-old-detokenize x stack-hash))
-             ((string-match "^\000xe\\([[:digit:]]+\\)\000$" x)
-              (ebasic-old-detokenize (gethash (string-to-number (match-string 1 x)) stack-hash) stack-hash))
-             (t x))) return-list))
-
-(defun ebasic-unparse (parse-list)
-  "Return PARSE-LIST as a BASIC/algebraic expression."
-  (apply 'concat
-         (mapcar (lambda (x)
-                   (concat
-                    (cond
-                     ((listp x)
-                      (concat "("
-                              (ebasic-unparse x)
-                              ")"))
-                     ((numberp x)
-                      (number-to-string x))
-                     (t
-                      x))
-                    " ")) parse-list)))
-
-(defun ebasic-parse (expression &optional stack-hash)
-  "Parse EXPRESSION as a BASIC/algebraic expression."
-  (let (leave-tokens return-value)
-    (unless stack-hash
-      (setq stack-hash (make-hash-table :test 'eql))
-      (setq leave-tokens t))
-    (save-match-data
-      (setq return-value
-            (cond
-             ((and (stringp expression) (string= expression ""))
-              nil)
-             ((string-match "^\\(.*?\\)\\(\"[^\"]*\"\\)\\(.*\\)$" expression)
-              (append (ebasic-parse (match-string 1 expression) stack-hash)
-                      (list (match-string 2 expression))
-                      (ebasic-parse (match-string 3 expression) stack-hash)))
-             ((string-match "^\\(.*\\)(\\([^)]*?\\))\\(.*\\)$" expression)
-              (let ((tempvar (ebasic-parse (match-string 2 expression)
-                                           stack-hash)))
-                (puthash (hash-table-count stack-hash)
-                         tempvar stack-hash))
-              (ebasic-parse
-               (concat (match-string 1 expression)
-                       (format "\000xe%d\000" (1- (hash-table-count stack-hash)))
-                       (match-string 3 expression)) stack-hash))
-             ((string-match "^\\(.*\\)\\(\000xe[[:digit:]]+\000\\)\\(.*\\)$" expression)
-              (append (ebasic-parse (match-string 1 expression) stack-hash)
-                      (list (match-string 2 expression))
-                      (ebasic-parse (match-string 3 expression) stack-hash)))
-             ((string-match "^\\(.*?\\)[[:space:]]*\\([-+*/,'^]\\)[[:space:]]*\\(.*\\)$" expression)
-              (append (ebasic-parse (match-string 1 expression) stack-hash)
-                      (list (match-string 2 expression))
-                      (ebasic-parse (match-string 3 expression) stack-hash)))
-             ((string-match "^[[:space:]]*\\([^[:space:]]+\\)[[:space:]]*\\(.*\\)$" expression)
-              (append (list (match-string 1 expression))
-                      (ebasic-parse (match-string 2 expression) stack-hash)))
-             (t (list expression)))))
-    (if leave-tokens
-        (ebasic-old-detokenize return-value stack-hash)
-      return-value)))
-
 (defun ebasic-split-list (in-list &rest delimiter)
   "Split a simple IN-LIST into separate lists based on strings equal to DELIMITER."
   (let (out-list temp-list)
@@ -263,5 +112,10 @@ STACK-HASH, tokenizing the results."
       (setq in-list (cdr in-list)))
     (setq out-list (append (list (reverse temp-list)) out-list))
     (reverse out-list)))
+
+(defun ebasic-execute (instring)
+  "Lex INSTRING and execute."
+  (dolist (i (ebasic-parse-final (ebasic-lex instring)))
+    (eval i)))
 
 (provide 'ebasic-setup)

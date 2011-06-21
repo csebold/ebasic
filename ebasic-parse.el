@@ -55,7 +55,8 @@ function.")
     (ebasic/gosub    ((identifier . "GOSUB") number) 2)
     (ebasic/stop     ((identifier . "STOP"))         nil)
     (ebasic/for      ((identifier . "FOR") identifier equals :expression (identifier . "TO") :expression)
-                     (2 4 6)))
+                     (2 4 6))
+    (ebasic/print    (:rest)                         2))
   "Parse syntax for all possible statements.")
 
 (defun ebasic-literal (x)
@@ -128,44 +129,6 @@ and the group starting with ELT."
               (setq found t))
           (push i before))))
     (cons (reverse before) (list (reverse after)))))
-
-(defun ebasic-parse-match (x grammar)
-  "If X and GRAMMAR match, return X parsed in groups matching
-GRAMMAR; otherwise return nil."
-  (let (acc
-        (temp x)
-        (i 0))
-    (while temp
-      (if (>= i (length grammar))
-          (progn
-            (setq temp nil)
-            (setq acc nil))
-        (let ((current (pop temp))
-              (current-g (nth i grammar))
-              (current-g-cdr (nthcdr (1+ i) grammar)))
-          (if (ebasic-eq-types current current-g)
-              (push current acc)
-            (if (and (eq current-g :expression)
-                     (memq (caar current-g-cdr) temp))
-                ; if we're on expression and there's an identifier afterwards
-                (let ((temp2 (ebasic-separate temp (caar current-g-cdr))))
-                  (if (or (eq nil (car temp2)) (eq nil (cdr temp2)))
-                      (progn
-                        (setq temp nil)
-                        (setq acc nil))
-                    (push (ebasic-parse-expression
-                           (if (listp temp2) (car temp2) (list temp2)))
-                          acc)))
-              (if (and (eq current-g :expression)
-                       (eq nil (caar current-g-cdr)))
-                  ; expression runs to the end of the line
-                  (progn
-                    (push (ebasic-parse-expression (cons current temp)) acc)
-                    (setq temp nil))
-                (setq temp nil)
-                (setq acc nil))))
-          (setq i (1+ i)))))
-    (reverse acc)))
 
 (defun ebasic-first-instance (element list &optional testpred)
   "Return the index of the first time ELEMENT shows up in LIST.
@@ -280,15 +243,19 @@ ARGSORDER."
                  (parse (nth 1 i))
                  (argsorder (nth 2 i))
                  (matchp t)
-                 expressionp groupp)
+                 expressionp groupp restp)
              (if (or (= (safe-length x) (length parse))
-                     (and (memq :expression parse)
+                     (and (or (memq :expression parse)
+                              (memq :rest parse))
                           (>= (safe-length x) (length parse))))
                  (dotimes (j (length parse))
                    (when (and (symbolp (nth j parse))
                               (eq (nth j parse) 'group))
                      (setq groupp t))
                    (cond
+                    ((and (keywordp (nth j parse))
+                          (eq (nth j parse) :rest))
+                     (setq restp t))
                     ((and (keywordp (nth j parse))
                           (eq (nth j parse) :expression))
                      (setq expressionp t))
@@ -315,19 +282,27 @@ ARGSORDER."
                                                 (if (keywordp y)
                                                     y
                                                   (let ((temp2 (nth (1- y) x)))
-                                                    (if (and (listp temp2)
-                                                             (eq (car temp2) 'group))
-                                                        (ebasic-parse-expression temp2)
-                                                      (ebasic-literal temp2)))))
+                                                    (cond
+                                                     ((and (listp temp)
+                                                           (eq (car temp) 'group))
+                                                      (ebasic-parse-expression temp2))
+                                                     (restp
+                                                      (ebasic-parse-expression (nthcdr (1- argsorder) x)))
+                                                     (t
+                                                      (ebasic-literal temp2))))))
                                               argsorder))
                               (setq temp
-                                    (if (and (listp temp)
-                                             (eq (car temp) 'group))
-                                        (ebasic-parse-expression (nth (1- argsorder) x))
-                                      (ebasic-literal (nth (1- argsorder) x)))))
+                                    (cond
+                                     ((and (listp temp)
+                                           (eq (car temp) 'group))
+                                      (ebasic-parse-expression (nth (1- argsorder) x)))
+                                     (restp
+                                      (ebasic-parse-expression (nthcdr (1- argsorder) x)))
+                                     (t
+                                      (ebasic-literal (nth (1- argsorder) x))))))
                             (cons func (cond
                                         ((and expressionp
-                                              (> 1 (length temp)))
+                                              (> 1 (safe-length temp)))
                                          (ebasic-parse-expression temp))
                                         ((and (listp temp)
                                               (eq (car temp) 'group))
@@ -453,9 +428,5 @@ START and END, then a list of everything in INLIST after END."
         (ebasic-lex-to-sexp (ebasic-parse-group i)))
        temp))
     temp))
-
-(defun ebasic-execute (instring)
-  "Lex INSTRING and execute."
-  (ebasic-parse-final (ebasic-lex instring)))
 
 (provide 'ebasic-parse)
