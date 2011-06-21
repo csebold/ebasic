@@ -51,7 +51,11 @@ function.")
   ; format: ebasic/FUNCTION syntax-sexp arg-test-function arg-conversion-function
   '((ebasic/let      (identifier equals :expression) (1 3))
     (ebasic/new      ((identifier . "NEW"))          nil)
-    (ebasic/goto     ((identifier . "GOTO") number)  2))
+    (ebasic/goto     ((identifier . "GOTO") number)  2)
+    (ebasic/gosub    ((identifier . "GOSUB") number) 2)
+    (ebasic/stop     ((identifier . "STOP"))         nil)
+    (ebasic/for      ((identifier . "FOR") identifier equals :expression (identifier . "TO") :expression)
+                     (2 4 6)))
   "Parse syntax for all possible statements.")
 
 (defun ebasic-literal (x)
@@ -444,9 +448,14 @@ START and END, then a list of everything in INLIST after END."
   "Run all possible parsing on INLEX."
   (let (temp)
     (dolist (i (ebasic-parse-multistatement inlex))
-      (push (ebasic-lex-to-sexp 
-             (mapcar 'ebasic-eval-constants (ebasic-parse-group i)))
-            temp))
-    (reverse temp)))
+      (push 
+       (ebasic-parse-statement
+        (ebasic-lex-to-sexp (ebasic-parse-group i)))
+       temp))
+    temp))
+
+(defun ebasic-execute (instring)
+  "Lex INSTRING and execute."
+  (ebasic-parse-final (ebasic-lex instring)))
 
 (provide 'ebasic-parse)
