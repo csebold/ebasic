@@ -1,5 +1,17 @@
 ; ebasic-parse.el
 
+; Major FIXME: literals should not be converted, and identifiers turned
+; into variables, until each individual statement is executed.
+; Otherwise you might end up with something like:
+
+; FOR X=1 TO 10: PRINT X: NEXT X
+
+; becoming:
+
+; (ebasic/for X 1 10)
+; (ebasic/print 1)
+; (ebasic/next X)
+
 (require 'ebasic-lex)
 
 (defvar ebasic-operator-order
@@ -31,10 +43,10 @@
   "Parse syntax for all possible expressions.
 
 Syntax is:
-(ebasic/function (grammar) (arguments))
+\(ebasic/function (grammar) (arguments))
 
 Example:
-(ebasic/add (:expression plus :expression) (1 3))
+\(ebasic/add (:expression plus :expression) (1 3))
 
 The above will find any case where two expressions are divided by
 a lexed PLUS, and pass arguments 1 and 3 to the Emacs Lisp
@@ -76,11 +88,14 @@ function.")
                "^-?\\(?:[[:digit:]]*\\.[[:digit:]]+\\|[[:digit:]]+\\.[[:digit:]]?\\|[[:digit:]]+\\)$"
                (cdr x))))
     (string-to-number (cdr x)))
-   ((and (listp x)
-         (eq (car x) 'identifier))
-    (ebasic-get-var (cdr x)))
    (t
     x)))
+
+(defun ebasic-eval-var (x)
+  (if (and (listp x)
+           (eq (car x) 'identifier))
+      (ebasic-get-var (cdr x))
+    x))
 
 (defun ebasic-ungroup (x)
   "Remove 'group' identifiers from X, leaving lists intact."
@@ -280,12 +295,6 @@ ARGSORDER."
                           (let (temp)
                             (if (listp argsorder)
                                 (setq temp
-                                      ; FIXME: if an identifier is
-                                      ; requested, then it should act
-                                      ; quite differently from an
-                                      ; expression.  Expressions are
-                                      ; evaluated; identifiers are
-                                      ; passed.
                                       (mapcar (lambda (y)
                                                 (if (keywordp y)
                                                     y
@@ -300,9 +309,13 @@ ARGSORDER."
                                                               (mapcar 'ebasic-parse-expression
                                                                       (nthcdr (1- argsorder) x))))
                                                      ((eq parsed :expression)
-                                                      (ebasic-literal temp2))
+                                                      (ebasic-eval-var (ebasic-literal temp2)))
                                                      (t
                                                       temp2)))))
+                                                      ;; (if (and (consp temp2)
+                                                      ;;          (atom (cdr temp2)))
+                                                      ;;     (list temp2)
+                                                      ;;   temp2))))))
                                               argsorder))
                               (setq temp
                                     (cond
@@ -313,9 +326,14 @@ ARGSORDER."
                                       (mapcar 'ebasic-literal
                                               (mapcar 'ebasic-parse-expression (nthcdr (1- argsorder) x))))
                                      ((eq :expression (nth (1- argsorder) parse))
-                                      (ebasic-literal (nth (1- argsorder) x)))
+                                      (ebasic-eval-var (ebasic-literal (nth (1- argsorder) x))))
                                      (t
-                                      (nth (1- argsorder) x)))))
+                                      (let ((t3 (nth (1- argsorder) x)))
+                                        (if (and (consp t3)
+                                                 (atom (cdr t3)))
+;                                            (list t3)
+                                            t3
+                                          t3))))))
                             (cons func (cond
                                         (restp temp)
                                         ((and expressionp

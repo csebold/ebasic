@@ -42,7 +42,26 @@ STRINGSPACE is a dummy parameter for compatibility."
   ; FIXME
   (with-current-buffer (get-buffer-create "*ebasic output*")
     (goto-char (point-max))
-    (insert (format "ebasic/print: %S\n" args))))
+    (let ((i 0) temp)
+      (while (< i (safe-length args))
+        (cond
+         ((and (consp (nth i args))
+               (ebasic-eq-id 'comma (nth i args)))
+          (push "\011" temp))
+         ((and (consp (nth i args))
+               (ebasic-eq-id 'semicolon (nth i args)))
+          (push 'semicolon temp))
+         (t
+          (push (ebasic-eval-var (ebasic-literal (nth i args))) temp)))
+        (setq i (1+ i)))
+      (insert
+       (apply 'concat
+              (mapcar (lambda (x) (if (numberp x) (number-to-string x) x))
+                      (reverse
+                       (remq 'semicolon
+                             (if (eq (car temp) 'semicolon)
+                                 (cdr temp)
+                               (append '("\n") temp))))))))))
 
 (defun ebasic/for (var start end &optional step)
   "Ebasic for loop."
@@ -52,5 +71,28 @@ STRINGSPACE is a dummy parameter for compatibility."
     (progn
       (push (list 'for var end step ebasic-substatement-number) ebasic-stack)
       (ebasic-set-var (cdr var) start))))
+
+(defun ebasic/next (var)
+  "Ebasic NEXT statement."
+  (let ((not-found t))
+    (while not-found
+      (let* ((stack-search (pop ebasic-stack))
+             (varname (cdr (nth 1 stack-search)))
+             (end (nth 2 stack-search))
+             (step (nth 3 stack-search))
+             (esn (nth 4 stack-search)))
+        (if (and (eq 'for (car stack-search))
+                 (ebasic-eq-id (cadr stack-search) var))
+            (progn
+              (setq not-found nil)
+              (ebasic-set-var varname
+                              (+ (ebasic-get-var varname)
+                                 step))
+              (when (<= (ebasic-get-var varname) end)
+                (push stack-search ebasic-stack)
+                (setq ebasic-substatement-number esn)))
+          (unless stack-search
+            ; next without for error
+            (setq not-found nil)))))))
 
 (provide 'ebasic-statements)

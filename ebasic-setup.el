@@ -124,6 +124,9 @@ STACK-HASH, tokenizing the results."
   (let ((ebasic-command-list (ebasic-parse-final (ebasic-lex instring))))
     (dotimes (ebasic-substatement-number (safe-length ebasic-command-list))
       (let ((i (nth ebasic-substatement-number ebasic-command-list)))
-        (apply 'funcall (car i) (cdr i))))))
+        (apply 'funcall (car i)
+               (if (and (atom (cddr i)) (cddr i))
+                   (list (cdr i))
+                 (cdr i)))))))
 
 (provide 'ebasic-setup)
