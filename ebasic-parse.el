@@ -49,16 +49,17 @@ function.")
 
 (defvar ebasic-parse-statement-syntax
   ; format: ebasic/FUNCTION syntax-sexp arg-test-function arg-conversion-function
-  '((ebasic/let      (identifier equals :expression) (1 3))
-    (ebasic/new      ((identifier . "NEW"))          nil)
-    (ebasic/clear    ((identifier . "CLEAR"))        nil)
-    (ebasic/clear    ((identifier . "CLEAR") number) 2)
-    (ebasic/goto     ((identifier . "GOTO") number)  2)
-    (ebasic/gosub    ((identifier . "GOSUB") number) 2)
-    (ebasic/stop     ((identifier . "STOP"))         nil)
+  '((ebasic/let      (identifier equals :expression)    (1 3))
+    (ebasic/new      ((identifier . "NEW"))             nil)
+    (ebasic/clear    ((identifier . "CLEAR"))           nil)
+    (ebasic/clear    ((identifier . "CLEAR") number)    2)
+    (ebasic/goto     ((identifier . "GOTO") number)     2)
+    (ebasic/gosub    ((identifier . "GOSUB") number)    2)
+    (ebasic/stop     ((identifier . "STOP"))            nil)
     (ebasic/for      ((identifier . "FOR") identifier equals :expression (identifier . "TO") :expression)
                      (2 4 6))
-    (ebasic/print    (:rest)                         2))
+    (ebasic/next     ((identifier . "NEXT") identifier) 2)
+    (ebasic/print    ((identifier . "PRINT") :rest)     2))
   "Parse syntax for all possible statements.")
 
 (defun ebasic-literal (x)
@@ -75,6 +76,9 @@ function.")
                "^-?\\(?:[[:digit:]]*\\.[[:digit:]]+\\|[[:digit:]]+\\.[[:digit:]]?\\|[[:digit:]]+\\)$"
                (cdr x))))
     (string-to-number (cdr x)))
+   ((and (listp x)
+         (eq (car x) 'identifier))
+    (ebasic-get-var (cdr x)))
    (t
     x)))
 
@@ -241,6 +245,7 @@ ARGSORDER."
          (ebasic-parse (car x))
        (catch 'found
          (dolist (i ebasic-parse-syntax)
+;           (message "Testing grammar:%S against input:%S" i x)
            (let ((func (car i))
                  (parse (nth 1 i))
                  (argsorder (nth 2 i))
@@ -254,6 +259,7 @@ ARGSORDER."
                    (when (and (symbolp (nth j parse))
                               (eq (nth j parse) 'group))
                      (setq groupp t))
+;                   (message "Comparing grammar:%S with input:%S" (nth j parse) (nth j x))
                    (cond
                     ((and (keywordp (nth j parse))
                           (eq (nth j parse) :rest))
@@ -262,9 +268,7 @@ ARGSORDER."
                           (eq (nth j parse) :expression))
                      (setq expressionp t))
                     ((and (consp (nth j parse))
-                          (not (ebasic-eq-id x (nth j parse))))
-; FIXME: replacing the below with the above may not have been right
-;                          (not (ebasic-eq-id (nth j x) (nth j parse))))
+                          (not (ebasic-eq-id (nth j x) (nth j parse))))
                      (setq matchp nil))
                     ((and (atom (nth j parse))
                           (not (eq (car (nth j x)) (nth j parse))))
@@ -276,10 +280,17 @@ ARGSORDER."
                           (let (temp)
                             (if (listp argsorder)
                                 (setq temp
+                                      ; FIXME: if an identifier is
+                                      ; requested, then it should act
+                                      ; quite differently from an
+                                      ; expression.  Expressions are
+                                      ; evaluated; identifiers are
+                                      ; passed.
                                       (mapcar (lambda (y)
                                                 (if (keywordp y)
                                                     y
-                                                  (let ((temp2 (nth (1- y) x)))
+                                                  (let ((temp2 (nth (1- y) x))
+                                                        (parsed (nth (1- y) parse)))
                                                     (cond
                                                      ((and (listp temp)
                                                            (eq (car temp) 'group))
@@ -288,8 +299,10 @@ ARGSORDER."
                                                       (mapcar 'ebasic-literal
                                                               (mapcar 'ebasic-parse-expression
                                                                       (nthcdr (1- argsorder) x))))
+                                                     ((eq parsed :expression)
+                                                      (ebasic-literal temp2))
                                                      (t
-                                                      (ebasic-literal temp2))))))
+                                                      temp2)))))
                                               argsorder))
                               (setq temp
                                     (cond
@@ -299,8 +312,10 @@ ARGSORDER."
                                      (restp
                                       (mapcar 'ebasic-literal
                                               (mapcar 'ebasic-parse-expression (nthcdr (1- argsorder) x))))
+                                     ((eq :expression (nth (1- argsorder) parse))
+                                      (ebasic-literal (nth (1- argsorder) x)))
                                      (t
-                                      (ebasic-literal (nth (1- argsorder) x))))))
+                                      (nth (1- argsorder) x)))))
                             (cons func (cond
                                         (restp temp)
                                         ((and expressionp
@@ -429,6 +444,6 @@ START and END, then a list of everything in INLIST after END."
        (ebasic-parse-statement
         (ebasic-lex-to-sexp (ebasic-parse-group i)))
        temp))
-    temp))
+    (reverse temp)))
 
 (provide 'ebasic-parse)

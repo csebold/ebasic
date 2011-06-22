@@ -40,7 +40,9 @@ STRINGSPACE is a dummy parameter for compatibility."
 (defun ebasic/print (&rest args)
   "Print ARGS."
   ; FIXME
-  (message "ebasic/print: %S" args))
+  (with-current-buffer (get-buffer-create "*ebasic output*")
+    (goto-char (point-max))
+    (insert (format "ebasic/print: %S\n" args))))
 
 (defun ebasic/for (var start end &optional step)
   "Ebasic for loop."
