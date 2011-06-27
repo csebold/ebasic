@@ -12,6 +12,7 @@
 ; (ebasic/print 1)
 ; (ebasic/next X)
 
+(require 'ebasic-setup)
 (require 'ebasic-lex)
 
 (defvar ebasic-operator-order
@@ -61,17 +62,19 @@ function.")
 
 (defvar ebasic-parse-statement-syntax
   ; format: ebasic/FUNCTION syntax-sexp arg-test-function arg-conversion-function
-  '((ebasic/let      (identifier equals :expression)    (1 3))
-    (ebasic/new      ((identifier . "NEW"))             nil)
-    (ebasic/clear    ((identifier . "CLEAR"))           nil)
-    (ebasic/clear    ((identifier . "CLEAR") number)    2)
-    (ebasic/goto     ((identifier . "GOTO") number)     2)
-    (ebasic/gosub    ((identifier . "GOSUB") number)    2)
-    (ebasic/stop     ((identifier . "STOP"))            nil)
+  '((ebasic/let      (identifier equals :expression)     (1 3))
+    (ebasic/new      ((identifier . "NEW"))              nil)
+    (ebasic/clear    ((identifier . "CLEAR"))            nil)
+    (ebasic/clear    ((identifier . "CLEAR") number)     2)
+    (ebasic/goto     ((identifier . "GOTO") number)      2)
+    (ebasic/gosub    ((identifier . "GOSUB") number)     2)
+    (ebasic/stop     ((identifier . "STOP"))             nil)
+    (ebasic/for      ((identifier . "FOR") identifier equals :expression (identifier . "TO") :expression
+                      (identifier . "STEP") :expression) (2 4 6 8))
     (ebasic/for      ((identifier . "FOR") identifier equals :expression (identifier . "TO") :expression)
                      (2 4 6))
-    (ebasic/next     ((identifier . "NEXT") identifier) 2)
-    (ebasic/print    ((identifier . "PRINT") :rest)     2))
+    (ebasic/next     ((identifier . "NEXT") identifier)  2)
+    (ebasic/print    ((identifier . "PRINT") :rest)      2))
   "Parse syntax for all possible statements.")
 
 (defun ebasic-literal (x)
@@ -85,7 +88,7 @@ function.")
          (eq (car x) 'number)
          (and (stringp (cdr x))
               (string-match
-               "^-?\\(?:[[:digit:]]*\\.[[:digit:]]+\\|[[:digit:]]+\\.[[:digit:]]?\\|[[:digit:]]+\\)$"
+               ebasic-number-literal-re
                (cdr x))))
     (string-to-number (cdr x)))
    (t

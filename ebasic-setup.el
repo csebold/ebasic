@@ -8,6 +8,10 @@
   ; FIXME: the array index will have to be replaced by a parser
   "Regexp to parse variable name, string flag, and index.")
 
+(defvar ebasic-number-literal-re
+  "-?\\(?:[0-9]+\\.[0-9]*\\|[0-9]+\\|\\.[0-9]+\\)"
+  "Regexp to match a numeric literal.")
+
 (defvar ebasic-stack nil
   "Ebasic stack list for subroutines, for/next loops, etc.")
 

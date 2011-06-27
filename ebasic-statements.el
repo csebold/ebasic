@@ -86,9 +86,12 @@ STRINGSPACE is a dummy parameter for compatibility."
             (progn
               (setq not-found nil)
               (ebasic-set-var varname
-                              (+ (ebasic-get-var varname)
-                                 step))
-              (when (<= (ebasic-get-var varname) end)
+                              (ebasic/add (ebasic-get-var varname)
+                                          step))
+              (when (or (and (< 0 step)
+                             (<= (ebasic-get-var varname) end))
+                        (and (> 0 step)
+                             (>= (ebasic-get-var varname) end)))
                 (push stack-search ebasic-stack)
                 (setq ebasic-substatement-number esn)))
           (unless stack-search
