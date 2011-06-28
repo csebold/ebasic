@@ -1,8 +1,6 @@
 ; ebasic-setup.el
 ; By Charles Sebold
 
-(require 'ebasic-parse)
-
 (defvar ebasic-array-re
   "\\([[:alpha:]]+\\(\\$?\\)\\)(\\([[:digit:]]+\\)"
   ; FIXME: the array index will have to be replaced by a parser
@@ -122,15 +120,5 @@ STACK-HASH, tokenizing the results."
       (setq in-list (cdr in-list)))
     (setq out-list (append (list (reverse temp-list)) out-list))
     (reverse out-list)))
-
-(defun ebasic-execute (instring)
-  "Lex INSTRING and execute."
-  (let ((ebasic-command-list (ebasic-parse-final (ebasic-lex instring))))
-    (dotimes (ebasic-substatement-number (safe-length ebasic-command-list))
-      (let ((i (nth ebasic-substatement-number ebasic-command-list)))
-        (apply 'funcall (car i)
-               (if (and (atom (cddr i)) (cddr i))
-                   (list (cdr i))
-                 (cdr i)))))))
 
 (provide 'ebasic-setup)

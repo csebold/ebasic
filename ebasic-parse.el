@@ -467,4 +467,14 @@ START and END, then a list of everything in INLIST after END."
        temp))
     (reverse temp)))
 
+(defun ebasic-execute (instring)
+  "Lex INSTRING and execute."
+  (let ((ebasic-command-list (ebasic-parse-final (ebasic-lex instring))))
+    (dotimes (ebasic-substatement-number (safe-length ebasic-command-list))
+      (let ((i (nth ebasic-substatement-number ebasic-command-list)))
+        (apply 'funcall (car i)
+               (if (and (atom (cddr i)) (cddr i))
+                   (list (cdr i))
+                 (cdr i)))))))
+
 (provide 'ebasic-parse)

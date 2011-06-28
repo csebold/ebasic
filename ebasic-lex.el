@@ -1,5 +1,7 @@
 ; ebasic-lex.el
 
+(require 'ebasic-setup)
+
 (eval-and-compile
   (defvar ebasic-tokens
     '((" +"                                             . space)
