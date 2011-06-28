@@ -1,16 +1,10 @@
 ; ebasic-parse.el
 
-; Major FIXME: literals should not be converted, and identifiers turned
-; into variables, until each individual statement is executed.
-; Otherwise you might end up with something like:
+; FIXME:
 
-; FOR X=1 TO 10: PRINT X: NEXT X
-
-; becoming:
-
-; (ebasic/for X 1 10)
-; (ebasic/print 1)
-; (ebasic/next X)
+; The right way to parse this is not to assume a single line, but to
+; assume that colons and newlines are basically the same thing, and
+; start planning for more advanced block functionality now.  Ugh.
 
 (require 'ebasic-setup)
 (require 'ebasic-lex)
@@ -62,7 +56,10 @@ function.")
 
 (defvar ebasic-parse-statement-syntax
   ; format: ebasic/FUNCTION syntax-sexp arg-test-function arg-conversion-function
-  '((ebasic/let      (identifier equals :expression)     (1 3))
+  '(
+    ;; (ebasic-parse-statements
+    ;;                  (:statement colon :statement)       (1 3))
+    (ebasic/let      (identifier equals :expression)     (1 3))
     (ebasic/new      ((identifier . "NEW"))              nil)
     (ebasic/clear    ((identifier . "CLEAR"))            nil)
     (ebasic/clear    ((identifier . "CLEAR") number)     2)
@@ -118,6 +115,10 @@ function.")
   "Parse expression X using `ebasic-parse-statement-syntax'."
   (let ((ebasic-parse-syntax ebasic-parse-statement-syntax))
     (ebasic-parse x)))
+
+(defun ebasic-parse-statements (&rest args)
+  "Parse each statement in ARGS."
+  (mapcar 'ebasic-parse-statement args))
 
 (defun ebasic-parse-literal-number (x)
   "Return literal number from lex X."
@@ -264,11 +265,24 @@ ARGSORDER."
        (catch 'found
          (dolist (i ebasic-parse-syntax)
 ;           (message "Testing grammar:%S against input:%S" i x)
-           (let ((func (car i))
-                 (parse (nth 1 i))
-                 (argsorder (nth 2 i))
-                 (matchp t)
-                 expressionp groupp restp)
+           (let* ((func (car i))
+                  (parse (nth 1 i))
+                  (argsorder (nth 2 i))
+                  (f-i-s (ebasic-first-instance (cadr parse)
+                                                x 'ebasic-eq-id))
+                  (matchp t)
+                  expressionp groupp restp)
+             ; test for multi-statements
+             ;; (if (and (eq (car parse) :statement)
+             ;;          f-i-s
+             ;;          (>= (safe-length (cddr parse))
+             ;;              (safe-length (nthcdr f-i-s x))))
+                 
+             ;; (when (memq :statement parse)
+             ;;   (dotimes (j (length parse))
+             ;;     (if 
+             ;;   (throw '
+             ; work through normal parsing
              (if (or (= (safe-length x) (length parse))
                      (and (or (memq :expression parse)
                               (memq :rest parse))
@@ -315,10 +329,6 @@ ARGSORDER."
                                                       (ebasic-eval-var (ebasic-literal temp2)))
                                                      (t
                                                       temp2)))))
-                                                      ;; (if (and (consp temp2)
-                                                      ;;          (atom (cdr temp2)))
-                                                      ;;     (list temp2)
-                                                      ;;   temp2))))))
                                               argsorder))
                               (setq temp
                                     (cond
@@ -331,12 +341,7 @@ ARGSORDER."
                                      ((eq :expression (nth (1- argsorder) parse))
                                       (ebasic-eval-var (ebasic-literal (nth (1- argsorder) x))))
                                      (t
-                                      (let ((t3 (nth (1- argsorder) x)))
-                                        (if (and (consp t3)
-                                                 (atom (cdr t3)))
-;                                            (list t3)
-                                            t3
-                                          t3))))))
+                                      (nth (1- argsorder) x)))))
                             (cons func (cond
                                         (restp temp)
                                         ((and expressionp
