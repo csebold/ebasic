@@ -260,7 +260,8 @@ ARGSORDER."
   (ebasic-ungroup
    (if (eq (car x) 'group)
        (cons 'group (ebasic-parse (cdr x)))
-     (if (and (listp x) (= 1 (safe-length x)) (listp (cdr x)))
+     (if (and (listp x) (= 1 (safe-length x))
+              (listp (cdr x)) (not (eq (cdr x) nil)))
          (ebasic-parse (car x))
        (catch 'found
          (dolist (i ebasic-parse-syntax)
